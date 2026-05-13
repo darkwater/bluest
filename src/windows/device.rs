@@ -258,9 +258,9 @@ impl DeviceImpl {
     pub async fn service_changed_indications(
         &self,
     ) -> Result<impl Stream<Item = Result<ServicesChanged>> + Send + Unpin + '_> {
-        let (mut sender, receiver) = futures_channel::mpsc::channel(16);
+        let (mut sender, receiver) = futures_channel::mpsc::unbounded();
         let token = self.inner.GattServicesChanged(&TypedEventHandler::new(move |_, _| {
-            if let Err(err) = sender.try_send(Ok(ServicesChanged(ServicesChangedImpl))) {
+            if let Err(err) = sender.unbounded_send(Ok(ServicesChanged(ServicesChangedImpl))) {
                 error!("Error sending service changed indication: {:?}", err);
             }
             Ok(())

@@ -75,12 +75,12 @@ impl AdapterImpl {
 
     /// A stream of [`AdapterEvent`] which allows the application to identify when the adapter is enabled or disabled.
     pub async fn events(&self) -> Result<impl Stream<Item = Result<AdapterEvent>> + Send + Unpin + '_> {
-        let (mut sender, receiver) = futures_channel::mpsc::channel(16);
+        let (mut sender, receiver) = futures_channel::mpsc::unbounded();
         let radio = self.inner.GetRadioAsync()?.await?;
         let token = radio.StateChanged(&TypedEventHandler::new(move |radio: &Option<Radio>, _| {
             let radio = radio.as_ref().expect("radio is null in StateChanged event");
             let state = radio.State().expect("radio state getter failed in StateChanged event");
-            let res = sender.try_send(if state == RadioState::On {
+            let res = sender.unbounded_send(if state == RadioState::On {
                 Ok(AdapterEvent::Available)
             } else {
                 Ok(AdapterEvent::Unavailable)
@@ -263,16 +263,27 @@ impl AdapterImpl {
     ) -> Result<impl Stream<Item = AdvertisingDevice> + Send + Unpin + 'a> {
         let ext_api_available = windows_version_above(10, 0, 19041);
 
-        let (sender, receiver) = futures_channel::mpsc::channel(16);
+        let (sender, receiver) = futures_channel::mpsc::unbounded();
         let sender = Arc::new(std::sync::Mutex::new(sender));
 
         let weak_sender = Arc::downgrade(&sender);
         let received_handler = TypedEventHandler::new(
             move |watcher: &Option<BluetoothLEAdvertisementWatcher>,
                   event_args: &Option<BluetoothLEAdvertisementReceivedEventArgs>| {
+                //
+                // let adv_type = event_args
+                //     .as_ref()
+                //     .map(|args| args.AdvertisementType());
+                //
+                // let addr = event_args
+                //     .as_ref()
+                //     .map(|args| args.BluetoothAddress());
+                //
+                // warn!("Received advertisement: adv_type={adv_type:?} addr={addr:012x?}");
+
                 if let Some(sender) = weak_sender.upgrade() {
                     if let Some(event_args) = event_args {
-                        let res = sender.lock().unwrap().try_send(event_args.clone());
+                        let res = sender.lock().unwrap().unbounded_send(event_args.clone());
                         if let Err(err) = res {
                             error!("Unable to send AdvertisingDevice: {:?}", err);
                         }
@@ -418,13 +429,13 @@ impl AdapterImpl {
         &'a self,
         device: &'a Device,
     ) -> Result<impl Stream<Item = ConnectionEvent> + Send + Unpin + 'a> {
-        let (mut sender, receiver) = futures_channel::mpsc::channel::<BluetoothConnectionStatus>(16);
+        let (mut sender, receiver) = futures_channel::mpsc::unbounded::<BluetoothConnectionStatus>();
 
         let token = {
             let handler = TypedEventHandler::new(move |device: &Option<BluetoothLEDevice>, _| {
                 if let Some(device) = device {
                     if let Ok(status) = device.ConnectionStatus() {
-                        let res = sender.try_send(status);
+                        let res = sender.unbounded_send(status);
                         if let Err(err) = res {
                             error!("Unable to send BluetoothConnectionStatus: {:?}", err);
                         }

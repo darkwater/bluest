@@ -162,7 +162,7 @@ impl CharacteristicImpl {
             ));
         };
 
-        let (mut sender, receiver) = futures_channel::mpsc::channel(16);
+        let (mut sender, receiver) = futures_channel::mpsc::unbounded();
         let token = self.inner.ValueChanged(&TypedEventHandler::new(
             move |_characteristic, event_args: &Option<GattValueChangedEventArgs>| {
                 let event_args = event_args
@@ -178,7 +178,7 @@ impl CharacteristicImpl {
                     Ok(data)
                 }
 
-                if let Err(err) = sender.try_send(get_value(event_args)) {
+                if let Err(err) = sender.unbounded_send(get_value(event_args)) {
                     error!("Error sending characteristic value changed notification: {:?}", err);
                 }
 
